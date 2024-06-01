@@ -1,0 +1,2082 @@
+---
+title: "tVNS on cognition and sleep_transparent_script"
+output: html_notebook
+---
+
+This Notebook encompasses the data analysis of the master thesis "Effects of tVNS on declarative memory, perception, and sleep architecture". Hypotheses 1 - 3 are reported here. Hypothesis 4 was exploratively analyzed in MATLAB.
+
+```{r echo=TRUE}
+# Workspace leeren
+rm(list = ls())
+
+update.packages(ask = FALSE)
+#install.packages("emmeans")
+#install.packages("multcomp")
+library(multcomp)
+
+#install.packages("broom.mixed")
+library(broom.mixed)
+library(ggplot2)
+library(data.table)
+# Pakete laden
+#install.packages('tidyverse')
+library(tidyverse)
+#install.packages('tidyr')
+library(tidyr)
+#install.packages("easystats")
+library(easystats)
+library(reshape2)
+
+#install.packages("sjstats")
+library(sjstats)
+# neue Pakete
+#install.packages('broom')
+library(broom)
+#install.packages('sjPlot')
+library(sjPlot)
+
+#install.packages('dplyr')
+library(dplyr)
+
+#install.packages('rstatix')
+library(rstatix)
+
+library(car)
+#install.packages('ez')
+library(ez)
+
+#install.packages('ggpubr')
+library(ggpubr)
+
+#install.packages("ggdist")
+#install.packages("cowplot")
+library(ggdist)
+library(cowplot)
+
+
+#install.packages('data.table')
+#install.packages('rlang')
+#install.packages('readxl')
+library(readxl)
+library(data.table)
+library(rlang)
+
+if (!require(performance)) {
+    install.packages("performance", dependencies = TRUE)
+    library(performance)
+}
+
+#install.packages('ggplot2')
+library(ggplot2)
+
+#install.packages('datarium')
+library(datarium)
+#install.packages('lme4')
+library(lme4)
+
+  #install.packages("lmerTest")
+library(lmerTest)
+
+#install.packages('emmeans')
+library(emmeans)
+
+#sjPlot for Tabular and Graphical Summaries
+#install.packages('sjPlot')
+library(sjPlot)
+
+#ggeffects for Predicted Values
+#install.packages('ggeffects')
+library(ggeffects)
+
+library(readr)
+library(caret)
+
+#For the Power analysis
+library(powerlmm)
+
+#install.packages('simr')
+library(simr)
+
+#Effect sizes!
+#install.packages('effectsize')
+library(effectsize)
+
+#install.packages("devtools")
+#library(devtools)
+
+#For consistent figure text (I will use Myriad Pro)
+#install.packages("extrafont")
+library(extrafont)
+#font_import()  
+#loadfonts(device = "pdf") 
+#fonts()
+
+#For Calculating R^2 
+#install.packages('MuMIn')
+library(MuMIn)
+
+#install.packages('poorman')
+library(poorman)
+
+
+library(ggdist)
+#install.packages("ggdist")
+library(ggplot2)
+#install.packages("cowplot")
+library(cowplot)
+
+
+#install.packages("patchwork")
+library(patchwork)
+#install.packages("ggdist")
+#install.packages("patchwork")
+#install.packages("dplyr")
+
+library(ggplot2)
+library(ggdist)
+library(patchwork)
+library(dplyr)
+
+library(tidyverse)
+#install.packages('tidyquant')
+library(tidyquant)
+library(ggdist)
+#install.packages('ggthemes')
+library(ggthemes)
+library(dplyr)
+
+#omega squared
+if (!requireNamespace("effectsize", quietly = TRUE)) {
+  install.packages("effectsize")
+}
+library(effectsize)
+
+
+```
+
+## Import data & initial descriptive analysis of participants
+
+```{r echo=TRUE}
+df <- read.csv(file = 'C:/Users/shadowstep.dani/OneDrive/Documents/R/data/data_tVNS on sleep & cognition_exl - Tabellenblatt1.csv', na = 'NA')
+
+```
+
+###Descriptive Analysis of participants
+
+```{r}
+# Calculate mean age
+mean_age <- mean(df$age)
+
+# Calculate standard deviation of age
+sd_age <- sd(df$age)
+
+# Calculate proportion of males and females
+total_count <- nrow(df)
+male_count <- sum(df$sex == "male")
+female_count <- sum(df$sex == "female")
+
+proportion_male <- male_count / total_count
+proportion_female <- female_count / total_count
+
+# Print the results
+cat("Mean Age:", mean_age, "\n")
+cat("Standard Deviation of Age:", sd_age, "\n")
+cat("Proportion Male:", proportion_male, "\n")
+cat("Proportion Female:", proportion_female, "\n")
+
+mean_age_stim <- mean(df[df$stimulation == "stim", "age"], na.rm = TRUE)
+
+# Calculate mean age for the "sham" group
+mean_age_sham <- mean(df[df$stimulation == "sham", "age"], na.rm = TRUE)
+
+male_count_stim <- sum(df[df$stimulation == "stim", "sex"] == "male", na.rm = TRUE)
+female_count_stim <- sum(df[df$stimulation == "stim", "sex"] == "female", na.rm = TRUE)
+
+# Count males and females in the "sham" group
+male_count_sham <- sum(df[df$stimulation == "sham", "sex"] == "male", na.rm = TRUE)
+female_count_sham <- sum(df[df$stimulation == "sham", "sex"] == "female", na.rm = TRUE)
+
+```
+
+### Transform from wide into long format & create new variables for stimulation condition & time
+```{r}
+#transform the data into long format
+data_long <- df %>%
+  pivot_longer(
+    cols = starts_with("declMem"), # Targeting columns of interest
+    names_to = c(".value", "Mem", "time"),
+    names_sep = "_", 
+    values_drop_na = TRUE
+  )
+
+#Create variable 'time'
+data_long <- data_long %>%
+  mutate(time = case_when(
+    time == "pre" ~ "Pre_nap",
+    time == "post" ~ "Post_nap",
+    TRUE ~ time 
+  ))
+
+# Adding a column for stimulation condition based on the task order and stimulation type
+df_dec <- data_long %>%
+  mutate(stimulation_condition = case_when(
+    order1 == "declarative" & order2 == "perceptual" & stimulation == "stim" ~ "delayed_stim",
+    TRUE ~ stimulation 
+  ))
+
+
+df_dec$time <- factor(df_dec$time, levels = c("Pre_nap", "Post_nap"))
+df_dec$time <- as.numeric(df_dec$time)
+
+df_dec$stimulation_condition <- factor(df_dec$stimulation_condition, levels = c("stim", "sham", "delayed_stim"), labels = c(0, 1, 2))
+df_dec$stimulation_condition <- as.numeric(df_dec$stimulation_condition)
+
+leveneTest(value ~ stimulation_condition, data = df_dec)
+
+# z-standardization of dependent variable
+df_dec$value_z <- scale(df_dec$value, center = TRUE, scale = TRUE)
+
+```
+
+
+## H1 Linear mixed Model for testing declarative Memory & visualization
+
+*H1:* "tVNS positively affects performance in the pre-nap *declarative memory* task and change across a nap."
+```{r}
+# The model analyses changes in memory (both item and source) across nap, considering stimulation conditions
+model_decl.3 <- lmer(value_z ~ stimulation_condition * time + Mem + (1|ID), data = df_dec)
+anova(model_decl.3)
+summary(model_decl.3)
+
+r.squaredGLMM(model_decl.3)
+
+# Visualization
+# Define the new labels for the 'stimulation' variable
+new_labels <- c('1' = 'tVNS', '2' = 'sham', '3' = 'delayed_stim')
+
+#Boxplots for each stimulation condition on pre- and post-nap measurement
+p2 <- ggplot(df_dec, aes(x = factor(time), y = value_z, color = factor(stimulation_condition))) +
+  geom_boxplot(aes(group = interaction(factor(time), factor(stimulation_condition))), position=position_dodge(width=0.8)) +
+  stat_summary(fun = mean, geom = "point", shape = 18, size = 3, position=position_dodge(width=0.8)) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2, position=position_dodge(width=0.8)) +
+  scale_color_manual(values = c("#800020", "#005f6a", "gray"),
+                     labels = c("tVNS", "sham", "delayed_stim"),
+                     breaks = c("1", "2", "3")) +
+  scale_x_discrete(labels = c("1" = "pre-nap", "2" = "post-nap")) +
+  theme_minimal() +
+  labs(x = "Time",
+       y = "Declarative Memory Score (d')",
+       color = "Stimulation Condition") +
+  theme(text = element_text(family = "Myriad Pro"),
+        plot.title = element_text(size = 16, face = "bold"),
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10),
+        legend.position = "right") +
+  theme(
+    legend.position = "bottom",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),# Remove minor grid lines
+    axis.line = element_line(colour = "black", arrow = arrow(length = unit(0.15, "npc"))),  # Add arrows to axes
+    axis.ticks.length = unit(0.5, "cm")  # Adjust tick length if necessary
+  )
+ggsave("Declarative_Boxplots.png", plot = p1, width = 10, height = 6, dpi = 900)
+
+#Plots with Means, Error Bars, And Rainclouds
+p01 <- df_dec %>% 
+  filter(stimulation_condition %in% c("stim", "sham", "delayed_stim")) %>% 
+  ggplot(aes(x = factor(time), y = declMem_z, fill = factor(stimulation_condition), color = factor(stimulation_condition))) +
+  # Add half-violin from {ggdist} package
+  stat_halfeye(
+    # Adjust bandwidth
+    adjust = 0.5,
+    # Move to the right
+    justification = -0.2,
+    # Remove the slab interval
+    .width = 0,
+    point_colour = NA,
+    alpha = 0.5
+  ) +
+  scale_fill_manual(values = c("stim" = "#800020", "sham" = "#005f6a", "delayed_stim" = "gray")) +
+  scale_color_manual(values = c("stim" = "#800020", "sham" = "#005f6a", "delayed_stim" = "gray")) +
+  scale_x_discrete(labels = c("1" = "pre-nap", "2" = "post-nap")) +
+  labs(x = "Time",
+       y = "Declarative Memory [d', centered]",
+       fill = "Stimulation Condition",
+       color = "Stimulation Condition") +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Myriad Pro"),
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    legend.position = "right",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "black"),
+    axis.ticks.length = unit(0.5, "cm"),
+    axis.line.x.bottom = element_line(arrow = arrow(length = unit(0.15, "npc"))),
+    axis.line.y.left = element_line(arrow = arrow(length = unit(0.15, "npc")))
+  ) +
+  # Add mean points and error bars
+  stat_summary(fun = mean, geom = "point", shape = 18, size = 3, position = position_dodge(width = 0.2)) +
+  stat_summary(fun = mean, geom = "line", aes(group = stimulation_condition)) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2, position = position_dodge(width = 0.2)) +
+  guides(color = guide_legend("Stimulation Condition"), fill = "none")
+
+  
+ggsave("Model_decMem_rainclouds_2321.png", plot = p01, width = 10, height = 6, dpi = 900)
+
+
+#Spagetti-Plot for tVNS Condition.
+ggplot(df_dec, aes(x = factor(time), y = value_z, group = interaction(stimulation_condition == "1", time))) +
+  geom_point(aes(color = factor(stimulation_condition == "1")), size = 2) +  # Individual data points
+  geom_line(aes(color = factor(stimulation_condition == "1"), group = interaction(stimulation_condition, as.factor(rep(1:10, each = 2)))), 
+            size = 0.5, alpha = 0.6) +  # Lines connecting data points
+  scale_color_manual(values = c("#800020", "#005f6a", "gray"),
+                     labels = c("tVNS", "sham", "delayed_stim"),
+                     breaks = c("1", "2", "3")) +
+  scale_x_discrete(labels = c("1" = "pre-nap", "2" = "post-nap")) +
+  theme_minimal() +
+  labs(x = "Time",
+       y = "Declarative Memory Score (d')",
+       color = "Stimulation Condition") +
+  theme(text = element_text(family = "Myriad Pro"),
+        plot.title = element_text(size = 16, face = "bold"),
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10),
+        legend.position = "right") +
+  theme(
+    legend.position = "bottom",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+    axis.line = element_line(colour = "black", arrow = arrow(length = unit(0.15, "npc"))),  # Add arrows to axes
+    axis.ticks.length = unit(0.5, "cm")  # Adjust tick length if necessary
+  )
+
+# Spagetti-Plot with all three conditions on top of each other (Unfortunately, I did not manage to plot them beautifully beside each other)
+ggplot(df_dec, aes(x = factor(time), y = value_z, group = ID, color = factor(stimulation_condition))) +
+  geom_line(size = 0.5, alpha = 0.6) +  # Lines connecting data points
+  geom_point(position = position_jitter(width = 0.1, height = 0), size = 2) +  # Add jitter to points
+  scale_color_manual(values = c("#800020", "#005f6a", "gray"),
+                     labels = c("tVNS", "sham", "delayed_stim"),
+                     breaks = c("1", "2", "3")) +
+  scale_x_discrete(labels = c("1" = "pre-nap", "2" = "post-nap")) +
+  theme_minimal() +
+  labs(x = "Time",
+       y = "Declarative Memory Score (d')",
+       color = "Stimulation Condition") +
+  theme(text = element_text(family = "Myriad Pro"),
+        plot.title = element_text(size = 16, face = "bold"),
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10),
+        legend.position = "right") +
+  theme(
+    legend.position = "bottom",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+    axis.line = element_line(colour = "black", arrow = arrow(length = unit(0.15, "npc"))),  # Add arrows to axes
+    axis.ticks.length = unit(0.5, "cm")  # Adjust tick length if necessary
+  )
+
+```
+
+#### Identifying the best model orientating at the code by Obleser et al. (2021)
+```{r  include=FALSE}
+
+# We should make sure a few R packages are installed:
+# check if all needed packages are installed
+# if not, download and install them
+packs_needed = c('plyr', 'tidyverse','R.matlab' ,  'lme4', 'lmerTest', 'plotrix', 'emmeans', 'afex', 'car', 'sjPlot', 'skimr',  'MuMIn', 'sinaplot', 'tibble', 'resample', 'resampledata', 'BayesFactor', 'simr', 'mediation', 'broom', 'parameters', 'performance', 'cowplot' ,'unikn', 'ggpubr', 'ggeffects', 'ggbeeswarm')
+
+# get Obleser et al.'s libraries locked and loaded:
+
+for(p in packs_needed){
+  if(!require(p,character.only = TRUE)) install.packages(p)
+  library(p,character.only = TRUE)
+}
+
+```
+
+```{r}
+# Modelling declarative Memory performance:
+model_decl.1 <- lmer(declMem_z ~ stimulation_condition * time + (1|ID), data = df_dec)
+anova_results <- Anova(model_decl.3, type = "III")
+
+model_decl.2 <- lmer(declMem_z ~ stimulation_condition * time  + (1|ID) + (1|ID:time), data = df_dec)
+anova(model_decl.1, model_decl.2)
+
+# adding memory type (Mem) significantly improves model
+model_decl.3 <- lmer(declMem_z ~stimulation_condition * time + Mem + (1|ID), data = df_dec)
+anova(model_decl.3)
+anova(model_decl.3, model_decl.1)
+
+sum(is.na(model_decl.3))
+
+model_decl.3ex <- lmer(declMem_z ~time + Mem + (1|ID), data = df_dec)
+anova(model_decl.3ex)
+anova(model_decl.3, model_decl.3ex)
+
+# comparing to interaction term but no improvement
+model_decl.4 <- lmer(declMem_z ~ stimulation_condition * time + Mem + (1|ID), data = df_dec)
+anova(model_decl.3,model_decl.4)
+
+# adding participant's sex does not improve the model
+model_decl.5 <- lmer(declMem_z ~ stimulation_condition + time + Mem + sex + (1|ID), data = df_dec)
+anova(model_decl.3, model_decl.5)
+
+# adding participant's age does not improve the model
+model_decl.6 <- lmer(declMem_z ~ stimulation_condition + time + Mem + age + (1|ID), data = df_dec)
+anova(model_decl.3, model_decl.6)
+
+#best model is model_decl.3
+
+
+#table for perceptual model
+tab_model(model_H1_perc_log, digits = 2, digits.p = 3, show.se = TRUE, show.stat = TRUE, p.val='kr',
+          string.stat = "t", linebreak = FALSE, show.icc = TRUE, show.aic = TRUE, show.df = TRUE, 
+          title = "Predicting Auditory Perception With Only Six Missing Values", dv.labels = "Perceptual sensitivity [dF, z-scored, log]",    
+          pred.labels = c("Intercept", "Stimulation Condition", "Time"), 
+          file = 'TableS21.html')
+
+tab_model(model_H1_perc_log, digits = 2, digits.p = 3, show.se = TRUE, show.stat = TRUE, p.val='kr',
+          string.stat = "t", linebreak = FALSE, show.icc = TRUE, show.aic = TRUE, show.df = TRUE, 
+          title = "Predicting Auditory Perception With Only Six Missing Values", 
+          dv.labels = "Perceptual sensitivity [dF, z-scored, log]",    
+          pred.labels = c("Intercept", 
+                          "Time (pre-nap)", 
+                          "Time (post-nap)", 
+                          "Stimulation Condition (sham)", 
+                          "Stimulation Condition (stim)", 
+                          "Time (pre-nap) * Stimulation Condition (sham)", 
+                          "Time (post-nap) * Stimulation Condition (sham)", 
+                          "Time (pre-nap) * Stimulation Condition (stim)", 
+                          "Time (post-nap) * Stimulation Condition (stim)"), 
+          file = 'TableS21.html')
+```
+#### Assumptions H1 declarative Memory
+
+```{r}
+#homoscedasticity & Linearity
+#Ideally, the residuals should be randomly scattered around the horizontal line without forming any patterns.
+plot(residuals(model_decl) ~ fitted(model_decl))
+abline(h = 0, col = "red")
+
+#Normality of Residuals
+#This Q-Q plot compares the distribution of residuals to a normal distribution. Points closely following the reference line suggest normality.
+qqnorm(resid(model_decl))
+qqline(resid(model_decl), col = "red")
+
+#Shapiro-Wilk test
+shapiro.test(resid(model_decl))
+
+#Check Linearity Assumption
+plot(df_dec$time, resid(model_decl), xlab = "Time", ylab = "Residuals", na.rm = TRUE)
+plot(df_dec$stimulation_condition, resid(model_decl), xlab = "stimulation_condition", ylab = "Residuals", values_drop_na = TRUE)
+
+#Independence of Residuals 
+#Checking for autocorrelation
+acf(resid(model_decl))
+
+#Revisit Random Effects Structure
+# Fitting a linear model without random effects
+model_decl_adjusted <- lmer(declMem ~ stimulation_condition + time + Mem + (1|ID) + (1|ID:time), data = df_dec)
+anova(model_decl_adjusted)
+
+# Simplified model without random slopes for ID
+model_decl_reduced <- lm(declMem ~ stimulation_condition * time, data = df_dec)
+summary(model_decl_reduced)
+model_decl_no_random <- lm(declMem ~ time * stimulation_condition, data = df_dec)
+
+model_decl_random_intercept <- lmer(declMem ~ time * stimulation_condition + (1|ID), data = df_dec)
+
+# Compare AIC, lower AIC suggests a better model fit.
+AIC(model_decl_no_random, model_decl_random_intercept, model_decl)
+AIC(model_decl)
+#Check for Overfitting
+isSingular(model_decl)
+
+#Examining Residuals for Outliers or Leverage Points
+#Calculating Cook's distance for each observation
+cooks.distance(model_decl)
+
+plot(cooks.distance(model_decl), type="h")  # 'h' for a high-density vertical line plot
+
+#Normality of Random Effects
+# Check normality of random effects
+ranef_dist <- ranef(model_decl, condVar = TRUE)
+qqnorm(ranef_dist$ID[[1]])  # Random intercepts for ID
+qqline(ranef_dist$ID[[1]])
+
+#Check for Multicollinearity !
+car::vif(model_decl)
+
+#due to the VIF values, another model: 
+filtered_data <- df_dec %>%
+  filter(stimulation_condition %in% c(1, 2))
+
+# Fit the linear model
+model_vif <- lm(declMem ~ stimulation_condition + time, data = filtered_data)
+
+# Summarize the model to view the coefficients and statistics
+anova(model_vif)
+car::vif(model_vif)
+```
+
+
+### Bayes Factor calculation for model of declarative memory performance
+
+```{r}
+# Winning model is:
+#   model_decl.3 <- lmer(declMem_z ~ 1 + stimulation_condition + time + Mem +   
+#   (1|ID), data = df_dec)
+# winning model
+full.model <- model_decl.3
+
+car::vif(model_decl.3)
+
+#terms included in model
+mod_stim_cond <- update(full.model, ~. - stimulation_condition)
+BF_stim_cond <- (BIC(refitML(mod_stim_cond))-BIC(refitML(full.model)))/2
+print(BF_stim_cond)
+
+mod_time <- update(full.model, ~. - time)
+BF_time <-  (BIC(refitML(mod_time))-BIC(refitML(full.model)))/2
+print(BF_time)
+
+mod_Mem <- update(full.model, ~. - Mem)
+BF_Mem <-  (BIC(refitML(mod_Mem))-BIC(refitML(full.model)))/2
+print(BF_Mem)
+
+#terms that did not improve the model
+mod_age <- update(full.model, ~. +age)
+BF_age <-  (BIC(refitML(full.model))-BIC(refitML(mod_age)))/2
+print(BF_age)
+
+mod_sex <- update(full.model, ~. +sex)
+BF_sex <-  (BIC(refitML(full.model))-BIC(refitML(mod_sex)))/2
+print(BF_sex)
+
+```
+
+#### Visualization
+```{r}
+
+mix_1 <- usecol(pal = c(Bordeaux, Petrol, Grau), n = 20)[c(1,5,9,16,20)]
+mix_2 <- usecol(pal = pal_karpfenblau,n=10)[c(2,9)]
+
+emmeans_output <- emmeans(model_decl.3, ~ stimulation_condition | time)
+
+# Convert emmeans output to a data frame for plotting
+emmeans_df <- as.data.frame(emmeans_output)
+
+p1 <- ggplot(emmeans_df, aes(x=factor(time), y=emmean, group=stimulation_condition, fill=stimulation_condition, color=stimulation_condition)) +
+  geom_point(size=3, position=position_dodge(width=0.5)) +
+  geom_errorbar(aes(ymin=lower.CL, ymax=upper.CL), width=0.2, position=position_dodge(width=0.5)) +
+  geom_line(position=position_dodge(width=0.5)) +  # Add lines between points
+  scale_color_manual(values=mix_1, labels=c("sham", "tVNS")) +
+  scale_fill_manual(values=mix_1, labels=c("sham", "tVNS")) +
+  theme_custom_small() +
+  xlab('Time') + ylab('Declarative Memory [d]') +
+  scale_x_discrete(labels=c('Pre-nap', 'Post-nap')) +
+  theme(legend.position='right') +  # Adjust legend position
+  labs(color='Stimulation Condition', fill='Stimulation Condition') 
+ theme(text = element_text(family = "Myriad Pro") +
+        plot.title = element_text(size = 16, face = "bold"),
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10),
+        legend.position = "right")# Add legend title
+
+
+```
+
+
+#### Post hoc tests and comparing alternative Models
+
+```{r}
+#Post-hoc tests 
+df_dec$stimulation_condition <- factor(df_dec$stimulation_condition, levels = c("1", "2"))
+df_dec$time <- factor(df_dec$time, levels = c("1", "2"))
+emm_results <- emmeans(model_decl, ~ stimulation_condition * time)
+
+# Print the estimated marginal means
+print(summary(emm_results, infer = c(TRUE, TRUE)))
+
+# Perform pairwise comparisons
+pairwise_comparisons <- pairs(emm_results, by = "time", adjust = "tukey")
+print(pairwise_comparisons)
+
+#planned contrasts
+# Obtain estimated marginal means
+emm <- emmeans(model_decl, ~ stimulation_condition | time)
+
+# Planned contrast: compare stimulation types for the pre-nap time point
+contrast(emm, method = "pairwise", simple = "time", by = NULL)
+
+#### Explorative:
+# Subset for pre-nap
+df_pre_nap <- subset(df_dec, time == "1")
+# Model for pre-nap
+model_pre_nap <- lm(declMem ~ stimulation_condition, data = df_pre_nap)
+summary(model_pre_nap)
+anova(model_pre_nap)
+
+# Subset for post-nap
+df_post_nap <- subset(df_dec, time == "2")
+# Model for post-nap
+model_post_nap <- lm(declMem ~ stimulation_condition, data = df_post_nap)
+#summary(model_post_nap)
+anova(model_post_nap)
+
+
+```
+
+
+
+## H1 Linear mixed Model for testing perception (2AFC pitch discrimination task)
+*H1:* "tVNS positively affects performance in the pre-nap *pitch discrimination* task and change across a nap."
+
+#### H1 Perceptual data preparation
+```{r}
+# We must create another time variable here, in order to not confuse who was stimulation during the 2AFC perceptual task
+# Identify participants who were stimulated during the perceptual task but not during the pitch discrimination task
+df$stim_condition <- ifelse(df$order1 == "perceptual" & df$stimulation == "stim", "later_stim", 
+                                   ifelse(df$stimulation == "stim", "stim", "sham"))
+
+# Check that the new variable has been created correctly
+table(df$stim_condition)
+
+# Reshape the data from wide to long format
+df_long <- pivot_longer(df,
+                        cols = starts_with("df_threshold"),
+                        names_to = "time",
+                        values_to = "performance",
+                        names_prefix = "df_threshold")
+
+# Convert the 'time' variable to a factor with appropriate levels
+df_long$time <- factor(df_long$time, levels = c("1", "2", "3"), labels = c("baseline", "pre-nap", "post-nap"))
+
+mean(df_long$performance, na.rm=TRUE)
+sd(df_long$performance, na.rm=TRUE)
+
+leveneTest(performance ~ time, data = df_long)
+
+#identify_outliers(df_long$performance, na.rm = TRUE) 
+#df_long <- df_long[-55, ]
+
+# z-transformation
+df_long$performance_z <- scale(df_long$performance, center = TRUE, scale = TRUE)
+```
+## Model for Pitch Discrimination task
+
+```{r}
+#initial model but normaltiy of residuals violation
+df.mod <- lmer(performance_z ~ stim_condition *time + (1 |ID),data=df_long)
+summary(df.mod)
+#log and z-transformed threshold
+df.mod.1 <- lmer(performance_z_log ~ stim_condition *time + (1 |ID),data=df_long)
+summary(df.mod.1)
+anova(df.mod, df.mod.1)
+
+#Bayes Factor
+full.model.df <- model_H1_perc_log
+
+#terms included in model
+mod_stim_condition <- update(full.model.df, ~. -stim_condition)
+BF_stim_cond <- (BIC(refitML(mod_stim_condition))-BIC(refitML(full.model.df)))/2
+
+print(BF_stim_cond)
+
+```
+
+
+#### H1 PerceptualLinear mixed model for perceptual task
+
+```{r}
+# effect of stimulation over time
+model_H1_perc <- lmer(performance_z ~ time * stim_condition + (1 | ID), data = df_long, na.action = na.omit)
+summary(model_H1_perc)
+anova(model_H1_perc)
+#Caclulate R^2
+r.squaredGLMM(model_H1_perc)
+
+AIC(model_H1_perc)
+
+# Calculate EMMs for the interaction of interest
+emm <- emmeans(model_H1_perc_log, specs = ~ time * stim_condition)
+# Generate pairwise comparisons for the interaction terms if needed
+pairwise_comparisons <- pairs(emm)
+# Summarize the EMMs
+emm_summary <- summary(emm)
+
+
+# Plotting with specified font
+p3 <- ggplot(emm_summary, aes(x = time, y = emmean, color = stim_condition, group = stim_condition)) +
+  geom_line(size = 1) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c("#E69F00", "#56B4E9", "#999999"),
+                     labels = c("tVNS", "sham", "delayed_stim")) +
+  labs(
+    title = "Estimated Marginal Means of performance_z",
+    x = "Time",
+    y = "Predicted Performance (dF)",
+    color = "Stimulation Condition"
+  ) +
+  theme_minimal() +
+  theme(text = element_text(family = "Myriad Pro"),
+        plot.title = element_text(size = 16, face = "bold"),
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10),
+        legend.position = "right")
+
+ggsave("Model_H1_perc.png", plot = p3, width = 10, height = 6, dpi = 900)
+
+```
+
+####H1 Perceptual: Post-hoc tests and Assumptions
+
+```{r}
+#Pairwise Comparisons
+
+# Calculate the EMMs for the interaction without specifying pairwise
+emm_interaction <- emmeans(model_H1_perc, ~ time * stim_condition)
+
+# Obtain the pairwise comparisons directly
+contrast_tests <- contrast(emm_interaction, interaction = "pairwise")
+
+# Adjust p-values for multiple testing using the appropriate method
+
+contrast_tests <- summary(contrast_tests, adjust = "tukey")
+
+
+if ("Tukey" %in% names(contrast_tests$adjustments)) {
+  contrast_tests <- summary(contrast_tests, adjust = "sidak")
+}
+
+contrast_tests <- summary(contrast_tests, adjust = "sidak")
+
+#Assumptions
+
+#Normality
+qqnorm(resid(model_H1_perc))
+qqline(resid(model_H1_perc), col = "red")
+shapiro.test(resid(model_H1_perc))
+
+#Outliers
+# Calculate Cook's distance for the model
+cooks_d <- cooks.distance(model_H1_perc)
+
+# Plot Cook's distance
+plot(cooks_d, ylab = "Cook's distance", type = "h", main = "Cook's Distance")
+abline(h = 4/(length(cooks_d)-1), col = "blue", lwd = 2, lty = 2)  # threshold line
+
+# Identify the index of potential outliers
+outliers <- which(cooks_d > 4/(length(cooks_d)-1))
+
+outlier_IDs <- rownames(df_long)[outliers]
+
+# Print the outlier IDs
+print(outlier_IDs)
+
+
+```
+
+####H1 Perceptual: Transformation and further alternative approaches
+
+```{r}
+# Apply log transformation
+df_long$performance_z_log <- log(df_long$performance_z +1)
+model_H1_perc_log <- lmer(performance_z_log ~ time * stim_condition + (1 | ID), data = df_long, na.action = na.omit)
+anova(model_H1_perc_log)
+summary(model_H1_perc_log)
+
+omega_H1_perc_log <- calculate_partial_omega_squared(model_H1_perc_log)
+
+
+# Relevel the factor
+df_long$stim_condition <- as.factor(df_long$stim_condition)
+df_long$stim_condition <- relevel(df_long$stim_condition, ref = "sham")
+
+# Fit the model again
+relevel_model <- lmer(performance_z ~ time * stim_condition + (1 | ID), data = df_long)
+anova(relevel_model)
+summary(relevel_model)
+
+#Caclulate R^2
+r.squaredGLMM(model_H1_perc_log)
+
+#multicollinearity?
+car::vif(model_H1_perc_log)
+
+#The log model has a smaler AIC than the initial model
+AIC(model_H1_perc_log, model_H1_perc)
+
+# Extract random effects
+random_effects <- ranef(model_H1_perc_log)
+print(random_effects)
+
+#Normality
+qqnorm(resid(model_H1_perc_log))
+qqline(resid(model_H1_perc_log), col = "red")
+shapiro.test(resid(model_H1_perc_log))
+#Homoscedasticity
+plot(fitted(model_H1_perc_log), resid(model_H1_perc_log))
+abline(h = 0, col = "red")
+
+#Contrasts
+# Calculate EMMs for the interaction of interest
+emm_log <- emmeans(model_H1_perc_log, specs = ~ time * stim_condition)
+# Generate pairwise comparisons for the interaction terms if needed
+pairwise_comparisons <- pairs(emm_log)
+# Summarize the EMMs
+emm_summary_log <- summary(emm_log)
+
+
+ggsave("Model_H1_perc_log.png", plot = p4, width = 10, height = 6, dpi = 900)
+
+#Independence of Residuals
+library(lmtest)
+# Calculate residuals from the model
+residuals_log <- resid(model_H1_perc_log)
+
+# Use acf to check for autocorrelation
+acf(residuals_log)
+
+#outliers
+plot(hatvalues(model_H1_perc_log), type = "h")
+cooks_d <- cooks.distance(model_H1_perc_log)
+plot(cooks_d, type = "h")
+abline(h = 4/length(cooks_d), col = "blue")
+
+ranef_model <- ranef(model_H1_perc_log, condVar = TRUE)
+qqnorm(ranef_model$ID[[1]])
+qqline(ranef_model$ID[[1]], col = "red")
+
+
+p <- df_long %>% 
+  filter(stim_condition %in% c("stim", "sham", "later_stim")) %>% 
+  ggplot(aes(x = factor(time), y = performance_z_log, fill = factor(stim_condition), color = factor(stim_condition))) +
+  # Add half-violin from {ggdist} package
+  stat_halfeye(
+    # Adjust bandwidth
+    adjust = 0.5,
+    # Move to the right
+    justification = -0.2,
+    # Remove the slab interval
+    .width = 0,
+    point_colour = NA,
+    alpha = 0.5
+  ) +
+  scale_fill_manual(values = c("stim" = "#800020", "sham" = "#005f6a", "later_stim" = "gray")) +
+  scale_color_manual(values = c("stim" = "#800020", "sham" = "#005f6a", "later_stim" = "gray")) +
+  labs(x = "Time",
+       y = "Perceptual performance [dF, centered, log]",
+       fill = "Stimulation Condition",
+       color = "Stimulation Condition") +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Myriad Pro"),
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    legend.position = "right",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "black"),
+    axis.ticks.length = unit(0.5, "cm"),
+    axis.line.x.bottom = element_line(arrow = arrow(length = unit(0.15, "npc"))),
+    axis.line.y.left = element_line(arrow = arrow(length = unit(0.15, "npc")))
+  ) +
+  # Add mean points and error bars
+  stat_summary(fun = mean, geom = "point", shape = 18, size = 3) +
+  stat_summary(fun = mean, geom = "line", aes(group = stim_condition)) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2) +
+  guides(color = guide_legend("Stimulation Condition"), fill = "none")
+######
+ggsave("Perceptual sensitivity with rainclouds_none_exluded_25_mai.png", plot = p, width = 10, height = 6, dpi = 900)
+
+
+```
+
+
+## H2: tVNS delayes sleep onset and reduces the amount of deep sleep compared to sham.
+
+```{r}
+# Reshape the data from wide to long format
+df_sleep <- df %>%
+  pivot_longer(cols = c("wake", "n1", "n2", "n3", "REM"), 
+               names_to = "sleep_stage", 
+               values_to = "percentage")
+
+# Calculate the means and standard errors for each group and sleep stage
+df_summary <- df_sleep %>%
+group_by(stimulation, sleep_stage) %>%
+  dplyr::summarise(
+    mean_percentage = mean(percentage, na.rm = TRUE),
+    se_percentage = sd(percentage, na.rm = TRUE) / sqrt(dplyr::n())
+  )
+# Plot the data
+p03 <- ggplot(df_summary, aes(x = sleep_stage, y = mean_percentage, fill = stimulation)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.9), width = 0.8) +
+  geom_errorbar(aes(ymin = mean_percentage - se_percentage, ymax = mean_percentage + se_percentage),
+                width = 0.2,
+                position = position_dodge(width = 0.9)) +
+  scale_fill_manual(values = c("stim" = "#800020", "sham" = "#005f6a")) +
+  labs(x = "Sleep Stage", y = "Time Spent (%)", fill = "Stimulation Condition") +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Myriad Pro"),
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    legend.position = "right",
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+    axis.line = element_line(colour = "black"),
+    axis.ticks.length = unit(0.5, "cm"),
+    axis.line.x.bottom = element_line(arrow = arrow(length = unit(0.15, "npc"))),
+    axis.line.y.left = element_line(arrow = arrow(length = unit(0.15, "npc")))
+  )
+
+ggsave("Sleep satages average.png", plot = p03, width = 10, height = 6, dpi = 900)
+#####
+# Linear model for sleep latency
+model_sleep_latency <- lm(sleep_latency_min ~ stimulation, data = df)
+summary(model_sleep_latency)
+# Linear model for amount of N3 sleep
+model_n3_sleep <- lm(n3 ~ stimulation, data = df)
+summary(model_n3_sleep)
+
+em_tension <- emmeans(model_n3_sleep, ~stimulation)
+pairs(em_tension)
+
+
+#### Subjective Sleep Quality measures ####
+# Difference in Sleepiness Scale Score from PreNap to PostNap
+df$diff_SSS <- df$SSS_PostNap - df$SSS_PreNap
+
+# Linear model for change in sleepiness
+model_diff_SSS <- lm(diff_SSS ~ stimulation, data = df)
+summary(model_diff_SSS)
+
+# Calculate the difference between post-nap and pre-nap values
+df$diff_MDBF_mood <- df$MDBF_PostNap_mood - df$MDBF_prenap_mood
+df$diff_MDBF_wakefulness <- df$MDBF_PostNap_wakefulness - df$MDBF_prenap_wakefulness
+df$diff_MDBF_calmness <- df$MDBF_PostNap_calmness - df$MDBF_prenap_calmness
+
+# Linear model for the change in mood
+model_diff_mood <- lm(diff_MDBF_mood ~ stimulation, data = df)
+summary(model_diff_mood)
+
+# Linear model for the change in wakefulness
+model_diff_wakefulness <- lm(diff_MDBF_wakefulness ~ stimulation, data = df)
+summary(model_diff_wakefulness)
+
+# Linear model for the change in calmness
+model_diff_calmness <- lm(diff_MDBF_calmness ~ stimulation, data = df)
+summary(model_diff_calmness)
+
+# Linear model for the change in calmness
+model_calmness <- lm(MDBF_prenap_calmness ~ stimulation, data = df)
+summary(model_calmness)
+anova(model_calmness)
+
+model_wakefulness <- lm(MDBF_prenap_wakefulness ~ stimulation, data = df)
+summary(model_wakefulness)
+#### ####
+
+# Plot for changes in mood
+ggplot(df, aes(x = stimulation, y = diff_MDBF_mood, fill = stimulation)) +
+  geom_boxplot() +
+  labs(title = "Change in MDBF Mood by Stimulation", y = "Change in Mood", x = "Stimulation") +
+  theme_minimal()+
+  theme_minimal()+
+  theme(text = element_text(family = "Myriad Pro"),
+        plot.title = element_text(size = 16, face = "bold"),
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10),
+        legend.position = "right")
+
+# Plot for changes in wakefulness
+ggplot(df, aes(x = stimulation, y = diff_MDBF_wakefulness, fill = stimulation)) +
+  geom_boxplot() +
+  labs(title = "Change in MDBF Wakefulness by Stimulation", y = "Change in Wakefulness", x = "Stimulation") +
+  theme_minimal()+
+  theme_minimal()+
+  theme(text = element_text(family = "Myriad Pro"),
+        plot.title = element_text(size = 16, face = "bold"),
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10),
+        legend.position = "right") 
+
+# Plot for changes in calmness
+ggplot(df, aes(x = stimulation, y = diff_MDBF_calmness, fill = stimulation)) +
+  geom_boxplot() +
+  labs(title = "Change in MDBF Calmness by Stimulation", y = "Change in Calmness", x = "Stimulation") +
+  theme_minimal()
+
+# Boxplot for sleep latency
+ggplot(df, aes(x = stimulation, y = sleep_latency_min)) +
+  geom_boxplot(fill = "#999999", color = "#111111") +
+  labs(title = "Sleep Latency by Stimulation Type", x = "Stimulation", y = "Sleep Latency (min)") +
+  theme_minimal() +
+  theme(text = element_text(family = "Myriad Pro"),
+        plot.title = element_text(size = 16, face = "bold"),
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10),
+        legend.position = "right")
+
+# Boxplot for N3 sleep duration
+ggplot(df, aes(x = stimulation, y = n3)) +
+  geom_boxplot(fill = "#999999", color = "#111111") +
+  labs(title = "N3 Sleep Duration by Stimulation Type", x = "Stimulation", y = "N3 Sleep (%)") +
+  theme_minimal()+
+  theme(text = element_text(family = "Myriad Pro"),
+        plot.title = element_text(size = 16, face = "bold"),
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10),
+        legend.position = "right") 
+#####
+
+```
+
+#### Post-hoc tests for H2
+```{r}
+# Post-hoc tests for sleep latency
+emm_sleep_latency <- emmeans(model_sleep_latency, ~ stimulation)
+pairs_sleep_latency <- pairs(emm_sleep_latency, adjust = "tukey")
+summary(pairs_sleep_latency)
+
+# Post-hoc tests for amount of N3 sleep
+emm_n3_sleep <- emmeans(model_n3_sleep, ~ stimulation)
+pairs_n3_sleep <- pairs(emm_n3_sleep, adjust = "tukey")
+summary(pairs_n3_sleep)
+
+# Post-hoc tests for change in sleepiness
+emm_diff_SSS <- emmeans(model_diff_SSS, ~ stimulation)
+pairs_diff_SSS <- pairs(emm_diff_SSS, adjust = "tukey")
+summary(pairs_diff_SSS)
+
+# Post-hoc tests for mood changes
+emm_diff_mood <- emmeans(model_diff_mood, ~ stimulation)
+pairs_diff_mood <- pairs(emm_diff_mood, adjust = "tukey")
+summary(pairs_diff_mood)
+
+# Q-Q plot and Shapiro-Wilk test for sleep latency
+qqnorm(resid(model_sleep_latency))
+qqline(resid(model_sleep_latency), col = "red")
+shapiro.test(resid(model_sleep_latency))
+
+# Q-Q plot and Shapiro-Wilk test for N3 sleep
+qqnorm(resid(model_n3_sleep))
+qqline(resid(model_n3_sleep), col = "red")
+shapiro.test(resid(model_n3_sleep))
+
+# Residuals vs Fitted for sleep latency
+plot(fitted(model_sleep_latency), resid(model_sleep_latency))
+abline(h = 0, col = "red")
+
+# Residuals vs Fitted for N3 sleep
+plot(fitted(model_n3_sleep), resid(model_n3_sleep))
+abline(h = 0, col = "red")
+
+# Cook's distance for sleep latency
+cooks_d_sleep_latency <- cooks.distance(model_sleep_latency)
+plot(cooks_d_sleep_latency, type = "h", main = "Cook's Distance for Sleep Latency Model")
+abline(h = 4/length(cooks_d_sleep_latency), col = "blue", lty = 2)
+
+# Cook's distance for N3 sleep
+cooks_d_n3_sleep <- cooks.distance(model_n3_sleep)
+plot(cooks_d_n3_sleep, type = "h", main = "Cook's Distance for N3 Sleep Model")
+abline(h = 4/length(cooks_d_n3_sleep), col = "blue", lty = 2)
+#Exclude influential observation nr 21 (as indicated by cook's d)
+df_filtered_sl <- df[-c(21), ]
+
+# Exclude observations by row number
+df_filtered_n3 <- df[-c(18), ]
+
+# Refit the linear models with the filtered data
+model_sleep_latency_filtered <- lm(sleep_latency_min ~ stimulation, data = df_filtered_sl)
+model_n3_sleep_filtered <- lm(n3 ~ stimulation, data = df_filtered_n3)
+
+# Summarize the new models
+summary(model_sleep_latency_filtered)
+summary(model_n3_sleep_filtered)
+
+# Boxplot for sleep latency
+ggplot(df_filtered_sl, aes(x = stimulation, y = sleep_latency_min)) +
+  geom_boxplot(fill = "#999999", color = "#111111") +
+  labs(title = "Sleep Latency by Stimulation Type", x = "Stimulation", y = "Sleep Latency (min)") +
+  theme_minimal()
+
+# Boxplot for N3 sleep duration
+ggplot(df_filtered_n3, aes(x = stimulation, y = n3)) +
+  geom_boxplot(fill = "#999999", color = "#111111") +
+  labs(title = "N3 Sleep Duration by Stimulation Type", x = "Stimulation", y = "N3 Sleep (%)") +
+  theme_minimal()
+
+
+qqnorm(resid(model_sleep_latency_filtered))
+qqline(resid(model_sleep_latency_filtered), col = "red")
+shapiro.test(resid(model_sleep_latency_filtered))
+
+# Q-Q plot and Shapiro-Wilk test for N3 sleep
+qqnorm(resid(model_n3_sleep_filtered))
+qqline(resid(model_n3_sleep_filtered), col = "red")
+shapiro.test(resid(model_n3_sleep_filtered))
+
+
+```
+
+```{r}
+# Post-hoc tests for sleep latency
+emm_sleep_latency <- emmeans(model_sleep_latency, ~ stimulation)
+pairs_sleep_latency <- pairs(emm_sleep_latency, adjust = "tukey")
+summary(pairs_sleep_latency)
+anova(model)
+
+# Post-hoc tests for amount of N3 sleep
+emm_n3_sleep <- emmeans(model_n3_sleep, ~ stimulation)
+pairs_n3_sleep <- pairs(emm_n3_sleep, adjust = "tukey")
+summary(pairs_n3_sleep)
+
+# Post-hoc tests for change in sleepiness
+emm_diff_SSS <- emmeans(model_diff_SSS, ~ stim_condition)
+pairs_diff_SSS <- pairs(emm_diff_SSS, adjust = "tukey")
+summary(pairs_diff_SSS)
+
+# Post-hoc tests for mood changes
+emm_diff_mood <- emmeans(model_diff_mood, ~ stim_condition)
+pairs_diff_mood <- pairs(emm_diff_mood, adjust = "tukey")
+summary(pairs_diff_mood)
+
+# Q-Q plot and Shapiro-Wilk test for sleep latency
+qqnorm(resid(model_sleep_latency))
+qqline(resid(model_sleep_latency), col = "red")
+shapiro.test(resid(model_sleep_latency))
+
+# Q-Q plot and Shapiro-Wilk test for N3 sleep
+qqnorm(resid(model_n3_sleep))
+qqline(resid(model_n3_sleep), col = "red")
+shapiro.test(resid(model_n3_sleep))
+
+# Residuals vs Fitted for sleep latency
+plot(fitted(model_sleep_latency), resid(model_sleep_latency))
+abline(h = 0, col = "red")
+
+# Residuals vs Fitted for N3 sleep
+plot(fitted(model_n3_sleep), resid(model_n3_sleep))
+abline(h = 0, col = "red")
+
+# Cook's distance for sleep latency
+cooks_d_sleep_latency <- cooks.distance(model_sleep_latency)
+plot(cooks_d_sleep_latency, type = "h", main = "Cook's Distance for Sleep Latency Model")
+abline(h = 4/length(cooks_d_sleep_latency), col = "blue", lty = 2)
+
+# Cook's distance for N3 sleep
+cooks_d_n3_sleep <- cooks.distance(model_n3_sleep)
+plot(cooks_d_n3_sleep, type = "h", main = "Cook's Distance for N3 Sleep Model")
+abline(h = 4/length(cooks_d_n3_sleep), col = "blue", lty = 2)
+
+# Updating the ggplot for sleep latency with confidence intervals
+ggplot(df_long, aes(x = stim_condition, y = sleep_latency_min)) +
+  geom_boxplot(fill = "skyblue", color = "darkblue") +
+  geom_jitter(width = 0.1, color = "black", size = 1.5) +
+  labs(title = "Sleep Latency by Stimulation Type", x = "Stimulation", y = "Sleep Latency (min)") +
+  theme_minimal()
+
+# Updating the ggplot for N3 sleep with confidence intervals
+ggplot(df_long, aes(x = stim_condition, y = n3)) +
+  geom_boxplot(fill = "lightgreen", color = "darkgreen") +
+  geom_jitter(width = 0.1, color = "black", size = 1.5) +
+  labs(title = "N3 Sleep Duration by Stimulation Type", x = "Stimulation", y = "N3 Sleep (%)") +
+  theme_minimal()
+
+df_long %>% 
+  filter(stim_condition %in% c("stim", "sham", "later_stim")) %>% 
+  ggplot(aes(x = factor(time), y = performance_z_log, fill = factor(stim_condition))) +
+  # Add half-violin from {ggdist} package
+  stat_halfeye(
+    # Adjust bandwidth
+    adjust = 0.5,
+    # Move to the right
+    justification = -0.2,
+    # Remove the slab interval
+    .width = 0,
+    point_colour = NA,
+    alpha = 0.5
+  ) +
+  scale_fill_manual(values = c("stim" = "#800020", "sham" = "#005f6a", "later_stim" = "gray")) +
+  labs(x = "Time",
+       y = "Perceptual performance [dF]",
+       fill = "Stimulation Condition") +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Myriad Pro"),
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    legend.position = "right",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "black"),
+    axis.ticks.length = unit(0.5, "cm"),
+    axis.line.x.bottom = element_line(arrow = arrow(length = unit(0.15, "npc"))),
+    axis.line.y.left = element_line(arrow = arrow(length = unit(0.15, "npc")))
+  ) +
+  # Add mean points and error bars
+  stat_summary(fun = mean, geom = "point", shape = 18, size = 3, aes(color = stim_condition)) +
+  stat_summary(fun = mean, geom = "line", aes(group = stim_condition, color = stim_condition)) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2, aes(color = stim_condition)) +
+  scale_color_manual(values = c("stim" = "#800020", "sham" = "#005f6a", "later_stim" = "gray"))
+
+library(ggplot2)
+library(ggdist)
+library(dplyr)
+
+p <- df_long %>% 
+  filter(stim_condition %in% c("stim", "sham", "later_stim")) %>% 
+  ggplot(aes(x = factor(time), y = performance_z_log, fill = factor(stim_condition), color = factor(stim_condition))) +
+  # Add half-violin from {ggdist} package
+  stat_halfeye(
+    # Adjust bandwidth
+    adjust = 0.5,
+    # Move to the right
+    justification = -0.2,
+    # Remove the slab interval
+    .width = 0,
+    point_colour = NA,
+    alpha = 0.5
+  ) +
+  scale_fill_manual(values = c("stim" = "#800020", "sham" = "#005f6a", "later_stim" = "gray")) +
+  scale_color_manual(values = c("stim" = "#800020", "sham" = "#005f6a", "later_stim" = "gray")) +
+  labs(x = "Time",
+       y = "Perceptual performance [dF]",
+       fill = "Stimulation Condition",
+       color = "Stimulation Condition") +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Myriad Pro"),
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    legend.position = "right",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "black"),
+    axis.ticks.length = unit(0.5, "cm"),
+    axis.line.x.bottom = element_line(arrow = arrow(length = unit(0.15, "npc"))),
+    axis.line.y.left = element_line(arrow = arrow(length = unit(0.15, "npc")))
+  ) +
+  # Add mean points and error bars
+  stat_summary(fun = mean, geom = "point", shape = 18, size = 3) +
+  stat_summary(fun = mean, geom = "line", aes(group = stim_condition)) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2) +
+  guides(color = guide_legend("Stimulation Condition"), fill = "none")
+
+
+```
+
+##### Log transformation due to violation of normality assumption.
+
+```{r}
+df_filtered_sl$log_sleep_latency_min <- log(df_filtered_sl$sleep_latency_min)
+df_filtered_n3$log_n3 <- log(df_filtered_n3$n3 + 1)  # Adding 1 to avoid log(0) if any zeros are present
+if (!require(MASS)) install.packages("MASS", dependencies = TRUE)
+library(MASS)
+library(ggplot2)
+library(dplyr)
+
+# Find the optimal lambda for the Box-Cox transformation
+boxcox_result <- boxcox(n3 ~ 1, data = df, lambda = seq(-2, 2, 0.1))
+lambda_optimal <- boxcox_result$x[which.max(boxcox_result$y)]
+
+# Apply the Box-Cox transformation using the optimal lambda
+df <- df %>%
+  mutate(n3_transformed = ifelse(lambda_optimal == 0, log(n3), (n3^lambda_optimal - 1) / lambda_optimal))
+
+# Fitting the linear models with the transformed data
+model_log_n3_sleep <- lm(log_n3 ~ stimulation, data = df_filtered_n3)
+shapiro.test(resid(model_log_n3_sleep))
+omega_squared(model_log_n3_sleep)
+#transformations for n3 
+df_filtered_n3$sqrt_n3 <- sqrt(df_filtered_n3$n3)
+model_sqrt_n3_sleep <- lm(sqrt_n3 ~ stimulation, data = df_filtered_n3)
+shapiro.test(resid(model_sqrt_n3_sleep))
+
+model_log_sleep_latency <- lm(log_sleep_latency_min ~ stimulation, data = df_filtered_sl)
+anova(model_log_sleep_latency)
+omega_squared(model_log_sleep_latency)
+
+full.model.sl <- model_log_sleep_latency 
+
+mod_sl <- update(full.model.sl, ~. -stimulation)
+BF_sl <-  (BIC(refitML(mod_sl))-BIC(refitML(full.model.sl)))/2
+print(BF_sl)
+
+
+# visualization for identifying correct transformation
+
+ggplot(df_filtered_n3, aes(x = n3)) +
+  geom_histogram(binwidth = 1, fill = "grey", color = "black", alpha = 0.7) +
+  labs(x = "N3 Sleep Stage Time (%)", y = "Frequency") +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Myriad Pro"),
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "black"),
+    axis.ticks.length = unit(0.5, "cm"),
+    axis.line.x.bottom = element_line(arrow = arrow(length = unit(0.15, "npc"))),
+    axis.line.y.left = element_line(arrow = arrow(length = unit(0.15, "npc")))
+  )
+
+#transforming: 
+
+df_filtered_n3 <- df_filtered_n3 %>%
+  mutate(n3_inverse_transformed = 1/(n3))
+
+#now plotting
+p06 <- ggplot(df_filtered_n3, aes(x = stimulation, y = log_n3, fill = stimulation)) +
+  geom_boxplot() +
+  scale_fill_manual(values = c("stim" = "grey", "sham" = "grey")) +
+  labs(x = "Stimulation Condition", y = "N3 [%, log]", fill = "Stimulation Condition") +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Myriad Pro"),
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    legend.position = "none",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "black"),
+    axis.ticks.length = unit(0.5, "cm"),
+    axis.line.x.bottom = element_line(arrow = arrow(length = unit(0.15, "npc"))),
+    axis.line.y.left = element_line(arrow = arrow(length = unit(0.15, "npc")))
+  )
+
+ggsave("Model_H2_n3.png", plot = p06, width = 10, height = 6, dpi = 900)
+
+p07 <- ggplot(df_filtered_sl, aes(x = stimulation, y = log_sleep_latency_min, fill = stimulation)) +
+  geom_boxplot() +
+  scale_fill_manual(values = c("stim" = "grey", "sham" = "grey")) +
+  labs(x = "Stimulation Condition", y = "Sleep latency [min, log]", fill = "Stimulation Condition") +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Myriad Pro"),
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    legend.position = "none",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "black"),
+    axis.ticks.length = unit(0.5, "cm"),
+    axis.line.x.bottom = element_line(arrow = arrow(length = unit(0.15, "npc"))),
+    axis.line.y.left = element_line(arrow = arrow(length = unit(0.15, "npc")))
+  )
+
+ggsave("Model_H2_sl.png", plot = p07, width = 10, height = 6, dpi = 900)
+
+
+#Calculating Cohen's d
+em_tension_sl <- emmeans(model_log_sleep_latency, ~stimulation)
+pairs(em_tension_sl)
+
+t_to_d(
+  t = c(-0.316),
+  df_error = 27)
+
+#plot(df$sleep_latency_min, df$stimulation)
+
+# Summarizing the models
+summary(model_log_sleep_latency)
+summary(model_sqrt_n3_sleep)
+
+em_tension_n3 <- emmeans(model_sqrt_n3_sleep, ~stimulation)
+pairs(em_tension_n3)
+
+t_to_d(
+  t = c(-0.081),
+  df_error = 27)
+
+# Q-Q plot for residuals of the transformed sleep latency model
+qqnorm(resid(model_log_sleep_latency))
+qqline(resid(model_log_sleep_latency), col = "red")
+
+# Q-Q plot for residuals of the transformed N3 sleep model
+qqnorm(resid(model_sqrt_n3_sleep))
+qqline(resid(model_sqrt_n3_sleep), col = "red")
+
+# Residuals vs Fitted plots for the transformed models
+par(mfrow=c(1,2))  # Plotting side by side
+plot(fitted(model_log_sleep_latency), resid(model_log_sleep_latency), main="Log Sleep Latency",
+     xlab="Fitted values", ylab="Residuals")
+abline(h = 0, col = "red")
+plot(fitted(model_sqrt_n3_sleep), resid(model_sqrt_n3_sleep), main="Log N3 Sleep",
+     xlab="Fitted values", ylab="Residuals")
+abline(h = 0, col = "red")
+
+#n3 is still not meeting normality assumption, but sleep latency does now!4y
+shapiro.test(resid(model_sqrt_n3_sleep))
+shapiro.test(resid(model_log_sleep_latency))
+
+
+# Load the emmeans library if not already loaded
+
+
+# Post-hoc tests on the transformed models
+emm_log_sleep_latency <- emmeans(model_log_sleep_latency, ~ stimulation)
+pairs_log_sleep_latency <- pairs(emm_log_sleep_latency, adjust = "tukey")
+summary(pairs_log_sleep_latency)
+
+emm_n3_sleep <- emmeans(model_sqrt_n3_sleep, ~ stimulation)
+pairs_n3_sleep <- pairs(emm_n3_sleep, adjust = "tukey")
+summary(pairs_n3_sleep)
+
+
+```
+
+## H3: Cortisol levels and alpha-amylase increase as a result of tVNS.
+
+```{r}
+#install.packages("tidyr")
+library(tidyr)
+
+df_phys <- pivot_longer(
+  df,
+  cols = c(cortisol1, cortisol2, cortisol3, sAA1, sAA2, sAA3),
+  names_to = c("measure", "time"),
+  names_pattern = "(cortisol|sAA)(\\d)",
+  values_to = "value"
+)
+
+# Convert time to a factor and provide meaningful labels
+df_phys$time <- factor(df_phys$time, levels = c("1", "2", "3"), labels = c("baseline", "pre-nap", "post-nap"))
+
+head(df_phys)
+
+# Model for cortisol
+# Use explicit namespace if necessary
+model_cortisol <- lmer(value ~ time * stimulation + (1 | ID), data = dplyr::filter(df_phys, measure == "cortisol"))
+
+summary(model_cortisol)
+anova(model_cortisol)
+#Anova(model_cortisol, type = "III")
+r.squaredGLMM(model_cortisol)
+
+#Effect sizes cortisol 
+eta2_cortisol_main <- F_to_eta2(0.3494 , 1, 25.415  )
+print(eta2_cortisol_main)
+eta2_cortisol_interaction <- F_to_eta2(0.9633  , 2, 46.836)
+print(eta2_cortisol_interaction)
+
+model_cortisol_reduced <- lm(value ~ time * stimulation, data = dplyr::filter(df_phys, measure == "cortisol"))
+AIC(model_cortisol_reduced, model_cortisol)
+# Model for sAA
+model_sAA <- lmer(value ~ time * stimulation + (1 | ID), data = dplyr::filter(df_phys, measure == "sAA"))
+summary(model_sAA)
+anova(model_sAA)
+r.squaredGLMM(model_sAA)
+#####
+#800020", "sham" = "#005f6a
+
+p6 <- ggplot(filter(df_phys, measure == "cortisol"), aes(x = time, y = value)) +
+  # Drawing lines in gray for individual participants
+  geom_line(aes(group = interaction(ID, stimulation)), color = "gray", alpha = 0.3) +
+  # Adding points in gray, positioned to avoid overlap
+  geom_point(color = "gray", position = position_dodge(width = 0.75), alpha = 0.5) +
+  # Adding boxplots with semi-transparent fill and outline based on stimulation group
+  geom_boxplot(aes(fill = stimulation, color = stimulation), alpha = 0.5, 
+               position = position_dodge(width = 0.75), outlier.shape = NA) +
+  # Faceting by stimulation to separate plots for sham and stim
+  facet_wrap(~stimulation) +
+  # Titles and labels
+  labs(x = "Time", y = "Cortisol Level") +
+  # Minimalist theme
+  theme_minimal() +
+ theme(text = element_text(family = "Myriad Pro"),
+        plot.title = element_text(size = 16, face = "bold"),
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 10),
+        legend.position = "none", axis.title.x = element_text(margin = margin(t = 10)), # Increase top margin of x-axis title
+       panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "black"),
+    axis.ticks.length = unit(0.5, "cm"),
+    axis.line.x.bottom = element_line(arrow = arrow(length = unit(0.15, "npc"))),
+    axis.line.y.left = element_line(arrow = arrow(length = unit(0.15, "npc"))),
+    axis.title.y = element_text(margin = margin(r = 10))  # Increase right margin of y-axis title
+       ) +
+  scale_fill_manual(values = c("stim" = "#800020", "sham" = "#005f6a")) +
+  scale_color_manual(values = c("stim" = "#800020", "sham" = "#005f6a"))
+
+ggsave("Boxplots_cortisol.png", plot = p6, width = 10, height = 6, dpi = 900)
+
+p7 <-ggplot(filter(df_phys, measure == "sAA"), aes(x = time, y = value)) +
+  # Drawing lines in gray for individual participants
+  geom_line(aes(group = interaction(ID, stimulation)), color = "gray", alpha = 0.3) +
+  # Adding points in gray, positioned to avoid overlap
+  geom_point(color = "gray", position = position_dodge(width = 0.75), alpha = 0.5) +
+  # Adding boxplots with semi-transparent fill and outline based on stimulation group
+  geom_boxplot(aes(fill = stimulation, color = stimulation), alpha = 0.5, 
+               position = position_dodge(width = 0.75), outlier.shape = NA) +
+  # Faceting by stimulation to separate plots for sham and stim
+  facet_wrap(~stimulation) +
+  # Titles and labels
+  labs(x = "Time", y = "sAA Level") +
+  # Minimalist theme
+  theme_minimal() +
+ theme(text = element_text(family = "Myriad Pro"),
+        plot.title = element_text(size = 16, face = "bold"),
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 10),
+        legend.position = "none", axis.title.x = element_text(margin = margin(t = 10)), # Increase top margin of x-axis title
+       panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "black"),
+    axis.ticks.length = unit(0.5, "cm"),
+    axis.line.x.bottom = element_line(arrow = arrow(length = unit(0.15, "npc"))),
+    axis.line.y.left = element_line(arrow = arrow(length = unit(0.15, "npc"))),
+    axis.title.y = element_text(margin = margin(r = 10))  # Increase right margin of y-axis title
+       ) +
+  scale_fill_manual(values = c("stim" = "#800020", "sham" = "#005f6a")) +
+  scale_color_manual(values = c("stim" ="#800020", "sham" = "#005f6a"))
+
+ggsave("Model_H3_cortisol.png", plot = p6, width = 10, height = 6, dpi = 900)
+
+ggsave("Model_H3_sAA.png", plot = p7, width = 10, height = 6, dpi = 900)
+
+#table
+
+#table for cortisol model
+tab_model(model_sAA, digits = 2, digits.p = 3, show.se = TRUE, show.stat = TRUE, p.val='kr',
+          string.stat = "t", linebreak = FALSE, show.icc = TRUE, show.aic = TRUE, show.df = TRUE, 
+          title = "Table S3: Predicting sAA Levels", dv.labels = "sAA levels",    
+          pred.labels = c("Intercept", "Stimulation Condition", "Time"), 
+          file = 'TableS3.html')
+
+
+#table for sAA model
+tab_model(model_cortisol, digits = 2, digits.p = 3, show.se = TRUE, show.stat = TRUE, p.val='kr',
+          string.stat = "t", linebreak = FALSE, show.icc = TRUE, show.aic = TRUE, show.df = TRUE, 
+          title = "Table S4: Predicting Cortisol Levels", dv.labels = "Cortisol levels",    
+          pred.labels = c("Intercept", "Stimulation Condition", "Time"), 
+          file = 'TableS4.html')
+#visualization
+# Define custom colors for stimulation conditions
+stim_colors <- c("stim" = "#800020", "sham" = "#005f6a")
+emm_sAA <- emmeans(model_sAA, ~ time * stimulation)
+emm_summary <- summary(emm_sAA)
+
+# Create the plot
+
+
+
+
+ggsave("Model_H2_sl.png", plot = p07, width = 10, height = 6, dpi = 900)
+
+random_effects <- ranef(model_sAA)$ID
+df_random_effects <- as.data.frame(random_effects)
+colnames(df_random_effects) <- c("Intercept")
+df_random_effects$ID <- rownames(df_random_effects)
+
+df_long <- dplyr::filter(df_phys, measure == "sAA")
+df_long$ID <- as.factor(df_long$ID)
+
+random_effects <- ranef(model_sAA)$ID
+df_random_effects <- as.data.frame(random_effects)
+colnames(df_random_effects) <- c("Intercept")
+df_random_effects$ID <- rownames(df_random_effects)
+
+df_long <- dplyr::filter(df_phys, measure == "sAA")
+df_long$ID <- as.factor(df_long$ID)
+df_long <- merge(df_long, df_random_effects, by = "ID")
+df_long$predicted_value <- df_long$Intercept + predict(model_sAA, re.form = NA)
+
+# Define custom colors for stimulation conditions
+stim_colors <- c("stim" = "#800020", "sham" = "#005f6a")
+
+# Create the plot
+ggplot() +
+  # Plot individual trajectories (random effects)
+  geom_line(data = df_long, aes(x = time, y = value, group = ID, color = stimulation), alpha = 0.3, size = 0.5) +
+  geom_point(data = df_long, aes(x = time, y = value, group = ID, color = stimulation), alpha = 0.3, size = 1.5) +
+  # Plot the estimated marginal means (fixed effects)
+  geom_line(data = emm_summary, aes(x = time, y = emmean, color = stimulation, group = stimulation), size = 1.2) +
+  geom_point(data = emm_summary, aes(x = time, y = emmean, color = stimulation), size = 3) +
+  scale_color_manual(values = stim_colors,
+                     labels = c("stim" = "Stimulation", "sham" = "Sham")) +
+  labs(
+    title = "Estimated Marginal Means of sAA Levels with Individual Trajectories",
+    x = "Time",
+    y = "sAA Levels",
+    color = "Stimulation Condition"
+  ) +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Myriad Pro"),
+    plot.title = element_text(size = 16, face = "bold"),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10),
+    legend.position = "right", 
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "black"),
+    axis.ticks.length = unit(0.5, "cm"),
+    axis.line.x.bottom = element_line(arrow = arrow(length = unit(0.15, "npc"))),
+    axis.line.y.left = element_line(arrow = arrow(length = unit(0.15, "npc")))
+  )
+
+#transf
+ggplot(dplyr::filter(df_phys, measure == "sAA"), aes(x = value)) +
+  geom_histogram(binwidth = 1, fill = "grey", color = "black", alpha = 0.7) +
+  labs(x = "sAA", y = "Frequency") +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Myriad Pro"),
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "black"),
+    axis.ticks.length = unit(0.5, "cm"),
+    axis.line.x.bottom = element_line(arrow = arrow(length = unit(0.15, "npc"))),
+    axis.line.y.left = element_line(arrow = arrow(length = unit(0.15, "npc")))
+  )
+
+p08 <- dplyr::filter(df_phys, measure == "sAA") %>%
+  filter(stimulation %in% c("stim", "sham")) %>% 
+  ggplot(aes(x = factor(time), y = value, fill = factor(stimulation), color = factor(stimulation))) +
+  # Add half-violin from {ggdist} package
+  stat_halfeye(
+    # Adjust bandwidth
+    adjust = 0.5,
+    # Move to the right
+    justification = -0.2,
+    # Remove the slab interval
+    .width = 0,
+    point_colour = NA,
+    alpha = 0.4
+  ) +
+  scale_fill_manual(values = c("stim" = "#800020", "sham" = "#005f6a")) +
+  scale_color_manual(values = c("stim" = "#800020", "sham" = "#005f6a")) +
+  labs(
+    x = "Time",
+    y = "sAA Levels",
+    fill = "Stimulation Condition",
+    color = "Stimulation Condition"
+  ) +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Myriad Pro"),
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    legend.position = "right",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "black"),
+    axis.ticks.length = unit(0.5, "cm"),
+    axis.line.x.bottom = element_line(arrow = arrow(length = unit(0.15, "npc"))),
+    axis.line.y.left = element_line(arrow = arrow(length = unit(0.15, "npc")))
+  ) +
+  # Add mean points and error bars
+  stat_summary(fun = mean, geom = "point", shape = 18, size = 3) +
+  stat_summary(fun = mean, geom = "line", aes(group = stimulation)) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2) +
+  guides(color = guide_legend("Stimulation Condition"), fill = "none")
+
+ggsave("Model_sAA_raincloud.png", plot = p08, width = 10, height = 6, dpi = 900)
+
+#cortisol
+p09 <- dplyr::filter(df_phys, measure == "cortisol") %>%
+  filter(stimulation %in% c("stim", "sham")) %>% 
+  ggplot(aes(x = factor(time), y = value, fill = factor(stimulation), color = factor(stimulation))) +
+  # Add half-violin from {ggdist} package
+  stat_halfeye(
+    # Adjust bandwidth
+    adjust = 0.5,
+    # Move to the right
+    justification = -0.2,
+    # Remove the slab interval
+    .width = 0,
+    point_colour = NA,
+    alpha = 0.4
+  ) +
+  scale_fill_manual(values = c("stim" = "#800020", "sham" = "#005f6a")) +
+  scale_color_manual(values = c("stim" = "#800020", "sham" = "#005f6a")) +
+  labs(
+    x = "Time",
+    y = "Cortisol Levels",
+    fill = "Stimulation Condition",
+    color = "Stimulation Condition"
+  ) +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Myriad Pro"),
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 12),
+    legend.position = "right",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "black"),
+    axis.ticks.length = unit(0.5, "cm"),
+    axis.line.x.bottom = element_line(arrow = arrow(length = unit(0.15, "npc"))),
+    axis.line.y.left = element_line(arrow = arrow(length = unit(0.15, "npc")))
+  ) +
+  # Add mean points and error bars
+  stat_summary(fun = mean, geom = "point", shape = 18, size = 3) +
+  stat_summary(fun = mean, geom = "line", aes(group = stimulation)) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2) +
+  guides(color = guide_legend("Stimulation Condition"), fill = "none")
+
+ggsave("Model_cortisol_raincloud.png", plot = p09, width = 10, height = 6, dpi = 900)
+
+
+
+####
+```
+
+### Bayes Factor for model of auditory perceptual sensitivity 
+
+```{r}
+
+
+full.model.c <- model_cortisol 
+
+mod_cortisol <- update(full.model.c, ~. -stimulation)
+BF_cortisol <-  (BIC(refitML(mod_cortisol))-BIC(refitML(full.model.c)))/2
+print(BF_cortisol)
+
+
+
+model_cortisol <- lmer(value ~ time * stimulation + (1 | ID), data = dplyr::filter(df_phys, measure == "cortisol"))
+#logBF
+full.model.c <- model_cortisol 
+
+mod_cortisol <- update(full.model.c, ~. -stimulation)
+BF_cortisol <-  (BIC(refitML(mod_cortisol))-BIC(refitML(full.model.c)))/2
+print(BF_cortisol)
+
+anova_results <- anova(model_cortisol)
+SS_effect <- anova_results$`Sum Sq`[2]  # Adjust the index as needed
+SS_residual <- anova_results$`Sum Sq`[length(anova_results$`Sum Sq`)]
+SS_total <- sum(anova_results$`Sum Sq`)
+
+# Calculate partial omega squared
+partial_omega_sq <- (SS_effect - (anova_results$Df[2] * (SS_residual / (anova_results$Df[length(anova_results$Df)] + 1)))) / (SS_total + SS_residual)
+
+# Print partial omega squared
+cat("Partial Omega Squared:", partial_omega_sq, "\n")
+
+#BF for sAA model
+model_sAA <- lmer(value ~ time * stimulation + (1 | ID), data = dplyr::filter(df_phys, measure == "sAA"))
+full.model.sAA <- model_sAA
+
+mod_sAA <- lmer(value ~ time + (1 | ID), data = dplyr::filter(df_phys, measure == "sAA"))
+BF_sAA <-  (BIC(refitML(mod_sAA))-BIC(refitML(full.model.sAA)))/2
+print(BF_sAA)
+anova(model_sAA)
+#logBF is 0 when interaction (time * stimulation), an d -1.288 when just imcludede as addition term time + stimulation 
+
+```
+
+##### Post-hoc Comparisons
+
+```{r}
+# Post-hoc tests for sleep latency
+emm_sleep_latency <- emmeans(model_sleep_latency, ~ stimulation)
+pairs_sleep_latency <- pairs(emm_sleep_latency, adjust = "tukey")
+summary(pairs_sleep_latency)
+summary(pairs_sleep_latency, infer = c(TRUE, TRUE))
+# Post-hoc tests for amount of N3 sleep
+emm_n3_sleep <- emmeans(model_n3_sleep, ~ stimulation)
+pairs_n3_sleep <- pairs(emm_n3_sleep, adjust = "tukey")
+summary(pairs_n3_sleep)
+
+# Post-hoc tests for change in sleepiness
+emm_diff_SSS <- emmeans(model_diff_SSS, ~ stimulation)
+pairs_diff_SSS <- pairs(emm_diff_SSS, adjust = "tukey")
+summary(pairs_diff_SSS)
+
+# Post-hoc tests for mood changes
+emm_diff_mood <- emmeans(model_diff_mood, ~ stimulation)
+pairs_diff_mood <- pairs(emm_diff_mood, adjust = "tukey")
+summary(pairs_diff_mood)
+
+
+```
+
+##### Post-hoc Checks H3
+
+```{r}
+# Load necessary libraries
+
+
+# Normality check for residuals using Q-Q plots and Shapiro-Wilk test
+qqnorm(resid(model_cortisol))
+qqline(resid(model_cortisol), col = "red")
+shapiro.test(resid(model_cortisol))
+
+qqnorm(resid(model_sAA))
+qqline(resid(model_sAA), col = "red")
+shapiro.test(resid(model_sAA))
+
+car::vif(model_cortisol)
+car::vif(model_sAA)
+
+acf(resid(model_cortisol))
+acf(resid(model_sAA))
+
+isSingular(model_cortisol)
+isSingular(model_sAA)
+
+
+# Homoscedasticity and linearity check using residuals vs fitted values plots
+plot(fitted(model_cortisol), resid(model_cortisol), main="Residuals vs Fitted for Cortisol",
+     xlab="Fitted values", ylab="Residuals")
+abline(h = 0, col = "red")
+
+plot(fitted(model_sAA), resid(model_sAA), main="Residuals vs Fitted for sAA",
+     xlab="Fitted values", ylab="Residuals")
+abline(h = 0, col = "red")
+
+
+
+# EMMs for cortisol
+emm_cortisol <- emmeans(model_cortisol, ~ time * stimulation)
+pairs_cortisol <- pairs(emm_cortisol, adjust = "tukey")
+summary(pairs_cortisol)
+
+# EMMs for sAA
+emm_sAA <- emmeans(model_sAA, ~ time * stimulation)
+pairs_sAA <- pairs(emm_sAA, adjust = "tukey")
+summary(pairs_sAA)
+
+# Cook's distance for cortisol model
+cooks_d_cortisol <- cooks.distance(model_cortisol)
+plot(cooks_d_cortisol, type = "h", main = "Cook's Distance for Cortisol Model")
+abline(h = 4/length(cooks_d_cortisol), col = "blue", lty = 2)
+
+# Cook's distance for sAA model
+cooks_d_sAA <- cooks.distance(model_sAA)
+plot(cooks_d_sAA, type = "h", main = "Cook's Distance for sAA Model")
+abline(h = 4/length(cooks_d_sAA), col = "blue", lty = 2)
+
+
+```
+
+## Calculating Bayes Factors for main models H1-H3
+
+```{r}
+# Bayes Factor
+library(BayesFactor)
+
+df_dec_clean$ID = factor(df_dec_clean$ID)
+df_dec_clean$time = factor(df_dec_clean$time)
+
+# Check for missing data in specific variables used in the model
+sapply(df_dec[c("declMem", "time", "stimulation_condition", "Mem", "ID")], function(x) sum(is.na(x)))
+
+df_dec_clean <- na.omit(df_dec)
+
+#Test
+full_formula <- declMem_z ~ time * stimulation_condition + ID+ (ID:time) 
+null_formula <- declMem_z ~ time + ID + (ID:time)
+
+# Calculate Bayes Factor using the cleaned dataset
+# Note: We are omitting the random effects part for this function call.
+bf_full <- lmBF(formula = full_formula, whichRandom = c("ID", "ID:time"), data = df_dec_clean)
+
+# Fit the null model
+bf_null <- lmBF(formula = null_formula, whichRandom = c("ID","ID:time"), data = df_dec_clean)
+
+# Calculate the Bayes factor by comparing the full model against the null model
+bf_result <- bf_full / bf_null
+print(bf_result)
+
+# Print the result
+print(bf_result)
+
+#BF for perceptual data
+
+
+# Remove rows with NAs in these specific columns
+df_long_clean <- na.omit(df_long, cols = c("performance_z", "time", "stim_condition", "ID"))
+
+# Alternatively, 
+df_long_clean <- df_long[!is.na(df_long$performance_z_log), ]
+
+# Check for infinite values similarly if needed
+df_long_clean <- df_long_clean[!is.infinite(df_long_clean$performance_z_log), ]
+
+df_long_clean$ID = factor(df_long_clean$ID)
+
+full_formula_p <- performance_z_log ~ time * stim_condition + ID
+null_formula_p <- performance_z_log ~ time + ID
+
+# Calculate Bayes Factor using the cleaned dataset
+# Note: We are omitting the random effects part for this function call.
+bf_full_p <- lmBF(formula = full_formula_p, whichRandom = c("ID"), data = df_long_clean)
+
+# Fit the null model
+bf_null_p <- lmBF(formula = null_formula_p, whichRandom = c("ID"), data = df_long_clean)
+
+# Calculate the Bayes factor by comparing the full model against the null model
+bf_result_p <- bf_full_p / bf_null_p
+print(bf_result_p)
+
+####H3 
+df_phys_clean$ID = factor(df_phys_clean$ID)
+df_phys_clean <- df_phys[!is.na(df_phys$value), ]
+
+full_formula_sAA <- value ~ time * stimulation +ID
+null_formula_sAA <- value ~ time + ID
+
+
+bf_full_sAA <- lmBF(formula = full_formula_sAA, whichRandom = c("ID"), data = dplyr::filter(df_phys_clean, measure == "sAA"))
+
+# Fit the null model
+bf_null_sAA <- lmBF(formula = null_formula_sAA, whichRandom = c("ID"), data = dplyr::filter(df_phys_clean, measure == "sAA"))
+
+# Calculate the Bayes factor by comparing the full model against the null model
+bf_result_sAA <- bf_full_sAA / bf_null_sAA
+print(bf_result_sAA)
+
+#### Cortisol!
+full_formula_c <- value ~ time * stimulation +ID
+null_formula_c <- value ~ time + ID
+
+
+bf_full_c <- lmBF(formula = full_formula_c, whichRandom = c("ID"), data = dplyr::filter(df_phys_clean, measure == "cortisol"))
+
+# Fit the null model
+bf_null_c <- lmBF(formula = null_formula_c, whichRandom = c("ID"), data = dplyr::filter(df_phys_clean, measure == "cortisol"))
+
+# Calculate the Bayes factor by comparing the full model against the null model
+bf_result_c <- bf_full_c / bf_null_c
+print(bf_result_c)
+
+#### BF for sleep 
+df_filtered_sl_clean <- df_filtered_sl[!is.na(df_filtered_sl$log_sleep_latency_min), ]
+full_formula_sl <- log_sleep_latency_min ~ stimulation +time
+null_formula_sl <- log_sleep_latency_min ~ time
+# Fitting the linear models with the transformed data
+bf_full_sl <- lmBF(formula = full_formula_sl, data = df_filtered_sl_clean) 
+# Fit the null model
+bf_null_sl <- lmBF(formula = null_formula_sl, data = df_filtered_sl_clean)
+bf_result_sl <- bf_full_sl / bf_null_sl
+
+# Print the result
+print(bf_result_sl)
+
+####sAA
+
+df_filtered_n3_clean <- df_filtered_n3[!is.na(df_filtered_n3$log_n3), ]
+full_formula_n3 <- log_n3 ~ stimulation *time
+null_formula_n3 <- log_n3 ~ stimulation
+# Fitting the linear models with the transformed data
+bf_full_n3 <- lmBF(formula = full_formula_n3, data = df_filtered_n3_clean, df_filtered_n3_clean$stimulation == "stim") 
+# Fit the null model
+bf_null_n3 <- lmBF(formula = null_formula_n3, data = df_filtered_n3_clean, df_filtered_n3_clean$stimulation == "sham")
+bf_result_n3 <- bf_full_n3 / bf_null_n3
+
+print(bf_result_n3)
+
+model_log_n3_sleep <- lm(log_n3 ~ stimulation, data = df_filtered_n3)
+
+#omega_sq_p_sAA = (22484.7 - (2*))
+SS_stimulation <- 4296.4  # Sum of Squares for the stimulation effect
+NumDF_stimulation <- 1    # Numerator Degrees of Freedom for the stimulation effect
+SS_time_stimulation <- 22484.7  # Sum of Squares for the time:stimulation interaction
+SS_time <- 27038.1  # Sum of Squares for the time effect
+SS_residual <- 21.5331  # Sum of Squares for the residuals (from previous example)
+DenDF <- 49.856  # Denominator Degrees of Freedom for the residuals
+
+# Calculate Total Sum of Squares
+SS_total <- SS_time + SS_stimulation + SS_time_stimulation + SS_residual
+
+# Calculate Mean Square for the residuals
+MS_residual <- SS_residual / DenDF
+
+# Calculate partial omega squared for stimulation
+partial_omega_sq_stimulation <- (SS_stimulation - (NumDF_stimulation * MS_residual)) / (SS_total + MS_residual)
+
+
+
+## calculating partial omega squared
+
+# Function to calculate partial omega squared
+calculate_partial_omega_squared <- function(model) {
+  anova_results <- anova(model)
+  SS_total <- sum(anova_results$`Sum Sq`)
+  omega_squared_results <- effectsize::omega_squared(model, partial = TRUE)
+  
+  # Extract and print the partial omega squared for each fixed effect
+  print(omega_squared_results)
+  
+  return(omega_squared_results)
+}
+
+# Calculate partial omega squared for each model
+omega_cortisol <- calculate_partial_omega_squared(model_cortisol)
+omega_H1_perc_log <- calculate_partial_omega_squared(model_H1_perc_log)
+anova(model_cortisol)
+omega_decl <- calculate_partial_omega_squared(model_decl.3)
+omega_sAA <- calculate_partial_omega_squared(model_sAA)
+
+# Print the results
+cat("Partial Omega Squared for model_cortisol:\n")
+print(omega_cortisol)
+
+cat("Partial Omega Squared for model_H1_perc_log:\n")
+print(omega_H1_perc_log)
+
+cat("Partial Omega Squared for model_decl.3:\n")
+print(omega_decl)
+
+
+#now for the linear models with a single predictor, let's use omega squared instea: 
+# Function to calculate omega squared
+calculate_omega_squared <- function(model) {
+  anova_results <- anova(model)
+  SS_total <- sum(anova_results$`Sum Sq`)
+  omega_squared_results <- effectsize::omega_squared(model, partial = FALSE)
+  
+  # Extract and print the omega squared for each fixed effect
+  print(omega_squared_results)
+  
+  return(omega_squared_results)
+}
+
+# Calculate omega squared for the model
+omega_sl <- calculate_omega_squared(model_log_sleep_latency)
+omega_n3 <- calculate_omega_squared(model_log_n3_sleep)
+```
+
